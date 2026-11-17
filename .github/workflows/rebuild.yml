@@ -16,7 +16,7 @@ concurrency:
 
 env:
   # 换成你自己的仓库对应地址；源头一旦发布，后续构建从这里取上一版做增量
-  SITE_BASE: https://cdyforever.github.io/how-to-live-better
+  SITE_BASE: https://yzaytzy.github.io/liaytve
 
 jobs:
   build:
