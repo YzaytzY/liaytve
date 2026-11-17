@@ -1,0 +1,77 @@
+name: rebuild-content
+
+on:
+  schedule:
+    - cron: "0 18 * * 0" # 每周日 18:00 UTC = 周一凌晨 2:00 北京时间
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  # 换成你自己的仓库对应地址；源头一旦发布，后续构建从这里取上一版做增量
+  SITE_BASE: https://cdyforever.github.io/how-to-live-better
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 拉上游 markdown（全量 shallow clone 兜底，保证不漏）
+      - name: Fetch upstream
+        run: git clone --depth 1 https://github.com/eternity4719/HowToLiveBetter.git upstream
+
+      - name: Install deps
+        run: npm install @huggingface/transformers@3.3.1 --no-audit --no-fund
+
+      - name: Prepare output dirs
+        run: mkdir -p dist prev
+
+      # 取上一版发布产物：rules 做条数防呆基准，cache 做向量增量
+      - name: Fetch previous state
+        run: |
+          mkdir -p prev
+          curl -fsSL "$SITE_BASE/rules.json" -o prev/rules.json || echo "no prev rules (first run)"
+          curl -fsSL "$SITE_BASE/cache.json" -o prev/embeddings.json.cache || echo "no prev cache (first run)"
+          ls -la prev
+
+      # markdown → rules.json（条数漂移 >5% 会 fail 报警）
+      - name: Build rules.json
+        run: node publisher/build-rules.mjs upstream/book dist/rules.json prev/rules.json
+
+      # rules.json → embeddings.json（content_hash 缓存，只重嵌变化条目）
+      - name: Build embeddings.json
+        run: node publisher/build-embeddings.mjs dist/rules.json dist/embeddings.json prev/embeddings.json.cache
+
+      # Pages 根路径占位 + 缓存随站点发布，供下次构建取
+      - name: Stage site
+        run: |
+          echo '<!doctype html><meta charset="utf-8"><title>每日一条 content</title>内容分发源，App 自动同步用。' > dist/index.html
+          mv dist/embeddings.json.cache dist/cache.json
+          ls -la dist
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
