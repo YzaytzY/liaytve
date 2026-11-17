@@ -30,7 +30,9 @@ jobs:
 
       # 拉上游 markdown（全量 shallow clone 兜底，保证不漏）
       - name: Fetch upstream
-        run: git clone --depth 1 https://github.com/eternity4719/HowToLiveBetter.git upstream
+        run: |
+          git clone --depth 1 https://github.com/eternity4719/HowToLiveBetter.git upstream
+          echo "UPSTREAM_SHA=$(git -C upstream rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Install deps
         run: npm install @huggingface/transformers@3.3.1 --no-audit --no-fund
@@ -49,6 +51,8 @@ jobs:
       # markdown → rules.json（条数漂移 >5% 会 fail 报警）
       - name: Build rules.json
         run: node publisher/build-rules.mjs upstream/book dist/rules.json prev/rules.json
+        env:
+          UPSTREAM_SHA: ${{ env.UPSTREAM_SHA }}
 
       # rules.json → embeddings.json（content_hash 缓存，只重嵌变化条目）
       - name: Build embeddings.json
